@@ -13,6 +13,7 @@ interface PackageState {
   draggedType: PackageType | null;
   calcDays: number;
   calcPetSize: PetSize;
+  selectedCalcPackageId: string | null;
 
   loadPackages: () => Promise<void>;
   addPackage: (pkg: Omit<Package, 'id' | 'createdAt'>) => Promise<void>;
@@ -25,6 +26,7 @@ interface PackageState {
   setDraggedType: (type: PackageType | null) => void;
   clearCalculation: () => void;
   setCalcInputs: (days: number, petSize: PetSize) => void;
+  setSelectedCalcPackageId: (id: string | null) => void;
 }
 
 export const usePackageStore = create<PackageState>((set, get) => ({
@@ -38,6 +40,7 @@ export const usePackageStore = create<PackageState>((set, get) => ({
   draggedType: null,
   calcDays: 5,
   calcPetSize: 'medium',
+  selectedCalcPackageId: null,
 
   loadPackages: async () => {
     set({ loading: true, error: null });
@@ -102,13 +105,13 @@ export const usePackageStore = create<PackageState>((set, get) => ({
     set({ loading: true, error: null, calcDays: request.days, calcPetSize: request.petSize });
     try {
       const result = await calculatePrice(request);
-      if (!result.success && result.error) {
-        set({ calculationResult: result, loading: false });
+      if (result.success && result.matchedPackage) {
+        set({ calculationResult: result, loading: false, selectedCalcPackageId: result.matchedPackage.id });
       } else {
-        set({ calculationResult: result, loading: false });
+        set({ calculationResult: result, loading: false, selectedCalcPackageId: null });
       }
     } catch (err) {
-      set({ error: (err as Error).message, loading: false });
+      set({ error: (err as Error).message, loading: false, selectedCalcPackageId: null });
     }
   },
 
@@ -125,10 +128,14 @@ export const usePackageStore = create<PackageState>((set, get) => ({
   },
 
   clearCalculation: () => {
-    set({ calculationResult: null });
+    set({ calculationResult: null, selectedCalcPackageId: null });
   },
 
   setCalcInputs: (days, petSize) => {
     set({ calcDays: days, calcPetSize: petSize });
+  },
+
+  setSelectedCalcPackageId: (id) => {
+    set({ selectedCalcPackageId: id });
   },
 }));

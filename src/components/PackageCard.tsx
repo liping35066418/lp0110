@@ -13,29 +13,16 @@ interface PackageCardProps {
 }
 
 export default function PackageCard({ pkg, onDragStart, onDragOver, onDrop }: PackageCardProps) {
-  const { setEditingPackage, removePackage, calculationResult, calcDays, calcPetSize } = usePackageStore();
+  const { setEditingPackage, removePackage, selectedCalcPackageId, calcDays, calcPetSize } = usePackageStore();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
-  const isMatched = calculationResult?.matchedPackage?.id === pkg.id;
   const sizeOk = isSizeCompatible(pkg, calcPetSize);
   const daysOk = isDaysInRange(pkg, calcDays);
+  const isMatched = selectedCalcPackageId === pkg.id && sizeOk && daysOk;
 
   const estimate = useMemo(() => {
-    if (isMatched && calculationResult?.success) {
-      return {
-        basePrice: calculationResult.breakdown.basePrice,
-        discount: calculationResult.breakdown.discount,
-        totalPrice: calculationResult.totalPrice,
-        dailyRate: calculationResult.breakdown.dailyRate,
-        fullMonths: calculationResult.breakdown.fullMonths,
-        monthlyTotal: calculationResult.breakdown.monthlyTotal,
-        remainingDays: calculationResult.breakdown.remainingDays,
-        remainingDaysBase: calculationResult.breakdown.remainingDaysBase,
-        remainingDaysDiscount: calculationResult.breakdown.remainingDaysDiscount,
-      };
-    }
     return calcPriceForPackage(pkg, calcDays);
-  }, [pkg, calcDays, isMatched, calculationResult]);
+  }, [pkg, calcDays]);
 
   const handleDelete = () => {
     removePackage(pkg.id);

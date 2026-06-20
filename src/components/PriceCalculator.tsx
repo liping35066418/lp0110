@@ -1,11 +1,23 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import type { PetSize } from '../types';
 import { PET_SIZE_LABELS, PACKAGE_TYPE_LABELS, PACKAGE_TYPE_ICONS } from '../types';
 import { usePackageStore } from '../store/usePackageStore';
+import { isSizeCompatible, isDaysInRange, calcPriceForPackage } from '../utils/calcEstimate';
 import { Calculator, RefreshCw } from 'lucide-react';
 
 export default function PriceCalculator() {
-  const { calculate, calculationResult, clearCalculation, packages, loading, calcDays, calcPetSize, setCalcInputs } = usePackageStore();
+  const {
+    calculate,
+    calculationResult,
+    clearCalculation,
+    packages,
+    loading,
+    calcDays,
+    calcPetSize,
+    setCalcInputs,
+    selectedCalcPackageId,
+    setSelectedCalcPackageId,
+  } = usePackageStore();
 
   const days = calcDays;
   const petSize = calcPetSize;
@@ -38,8 +50,19 @@ export default function PriceCalculator() {
     calculate({ days, petSize });
   };
 
-  const bd = calculationResult?.breakdown;
-  const isCrossTier = bd && bd.fullMonths !== undefined && bd.fullMonths > 0;
+  const eligiblePackages = useMemo(() => {
+    if (days <= 0) return [];
+    return packages
+      .filter(pkg => isSizeCompatible(pkg, petSize) && isDaysInRange(pkg, days))
+      .map(pkg => ({ pkg, priceInfo: calcPriceForPackage(pkg, days) }))
+      .sort((a, b) => a.priceInfo.totalPrice - b.priceInfo.totalPrice);
+  }, [packages, days, petSize]);
+
+  const selectedResult = useMemo(() => {
+    if (eligiblePackages.length === 0) return null;
+    const found = eligiblePackages.find(e => e.pkg.id === selectedCalcPackageId);
+    return found || eligiblePackages[0];
+  }, [eligiblePackages, selectedCalcPackageId]);
 
   return (
     <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 text-white shadow-2xl">
@@ -127,80 +150,116 @@ export default function PriceCalculator() {
           </button>
         </div>
 
-        {calculationResult && calculationResult.success && bd && (
-          <div className="bg-slate-700/50 rounded-xl p-5 border border-slate-600">
-            <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-600">
-              <span className="text-3xl">
-                {PACKAGE_TYPE_ICONS[calculationResult.matchedPackage!.type]}
-              </span>
-              <div>
-                <div className="text-slate-400 text-sm">匹配套餐</div>
-                <div className="font-bold text-lg">
-                  {calculationResult.matchedPackage!.name}
-                </div>
-                <span className="text-xs bg-blue-500/30 text-blue-300 px-2 py-0.5 rounded-full">
-                  {PACKAGE_TYPE_LABELS[calculationResult.matchedPackage!.type]}
-                </span>
+        {eligiblePackages.length > 0 && (
+          <>
+            <div className="bg-slate-700/50 rounded-xl p-4 border border-slate-600">
+              <div className="text-sm text-slate-400 mb-3 font-medium">可选套餐对比</div>
+              <div className="space-y-1.5">
+                {eligiblePackages.map(({ pkg, priceInfo }, index) => {
+                  const isSelected = selectedResult?.pkg.id === pkg.id;
+                  return (
+                    <button
+                      key={pkg.id}
+                      type="button"
+                      onClick={() => setSelectedCalcPackageId(pkg.id)}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg transition-all text-left ${
+                        isSelected
+                          ? 'bg-blue-500/20 border border-blue-400/40'
+                          : 'bg-slate-600/30 border border-transparent hover:bg-slate-600/50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">{PACKAGE_TYPE_ICONS[pkg.type]}</span>
+                        <span className="text-sm font-medium">{pkg.name}</span>
+                        {index === 0 && (
+                          <span className="text-xs bg-green-500/30 text-green-300 px-1.5 py-0.5 rounded-full font-medium">
+                            最优
+                          </span>
+                        )}
+                      </div>
+                      <span className="font-bold text-sm">¥{priceInfo.totalPrice}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="space-y-2 text-sm">
-              {isCrossTier ? (
-                <>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">包月费用</span>
-                    <span className="font-medium">{bd.fullMonths}个月 × ¥{calculationResult.matchedPackage!.monthlyPrice} = ¥{bd.monthlyTotal}</span>
+            {selectedResult && (
+              <div className="bg-slate-700/50 rounded-xl p-5 border border-slate-600">
+                <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-600">
+                  <span className="text-3xl">
+                    {PACKAGE_TYPE_ICONS[selectedResult.pkg.type]}
+                  </span>
+                  <div>
+                    <div className="text-slate-400 text-sm">当前套餐</div>
+                    <div className="font-bold text-lg">
+                      {selectedResult.pkg.name}
+                    </div>
+                    <span className="text-xs bg-blue-500/30 text-blue-300 px-2 py-0.5 rounded-full">
+                      {PACKAGE_TYPE_LABELS[selectedResult.pkg.type]}
+                    </span>
                   </div>
-                  {bd.remainingDays! > 0 && (
+                </div>
+
+                <div className="space-y-2 text-sm">
+                  {selectedResult.priceInfo.fullMonths !== undefined && selectedResult.priceInfo.fullMonths > 0 ? (
                     <>
                       <div className="flex justify-between">
-                        <span className="text-slate-400">续住天数</span>
-                        <span className="font-medium">{bd.remainingDays}天 × ¥{bd.dailyRate} = ¥{bd.remainingDaysBase}</span>
+                        <span className="text-slate-400">包月费用</span>
+                        <span className="font-medium">{selectedResult.priceInfo.fullMonths}个月 × ¥{selectedResult.pkg.monthlyPrice} = ¥{selectedResult.priceInfo.monthlyTotal}</span>
                       </div>
-                      {bd.remainingDaysDiscount! > 0 && (
+                      {selectedResult.priceInfo.remainingDays! > 0 && (
+                        <>
+                          <div className="flex justify-between">
+                            <span className="text-slate-400">续住天数</span>
+                            <span className="font-medium">{selectedResult.priceInfo.remainingDays}天 × ¥{selectedResult.priceInfo.dailyRate} = ¥{selectedResult.priceInfo.remainingDaysBase}</span>
+                          </div>
+                          {selectedResult.priceInfo.remainingDaysDiscount! > 0 && (
+                            <div className="flex justify-between text-green-400">
+                              <span>续住折扣</span>
+                              <span className="font-medium">-¥{selectedResult.priceInfo.remainingDaysDiscount}</span>
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">单日单价</span>
+                        <span className="font-medium">¥{selectedResult.priceInfo.dailyRate}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">寄养天数</span>
+                        <span className="font-medium">{days}天</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">基础总价</span>
+                        <span className="font-medium">¥{selectedResult.priceInfo.basePrice}</span>
+                      </div>
+                      {selectedResult.priceInfo.discount > 0 && (
                         <div className="flex justify-between text-green-400">
                           <span>续住折扣</span>
-                          <span className="font-medium">-¥{bd.remainingDaysDiscount}</span>
+                          <span className="font-medium">-¥{selectedResult.priceInfo.discount}</span>
                         </div>
                       )}
                     </>
                   )}
-                </>
-              ) : (
-                <>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">单日单价</span>
-                    <span className="font-medium">¥{bd.dailyRate}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">寄养天数</span>
-                    <span className="font-medium">{bd.days}天</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-slate-400">基础总价</span>
-                    <span className="font-medium">¥{bd.basePrice}</span>
-                  </div>
-                  {bd.discount > 0 && (
-                    <div className="flex justify-between text-green-400">
-                      <span>续住折扣</span>
-                      <span className="font-medium">-¥{bd.discount}</span>
+                  <div className="pt-3 mt-3 border-t border-slate-600">
+                    <div className="flex justify-between items-center">
+                      <span className="text-lg">应付总价</span>
+                      <span className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-400">
+                        ¥{selectedResult.priceInfo.totalPrice}
+                      </span>
                     </div>
-                  )}
-                </>
-              )}
-              <div className="pt-3 mt-3 border-t border-slate-600">
-                <div className="flex justify-between items-center">
-                  <span className="text-lg">应付总价</span>
-                  <span className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-green-400 to-emerald-400">
-                    ¥{calculationResult.totalPrice}
-                  </span>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
 
-        {calculationResult && !calculationResult.success && calculationResult.error && (
+        {eligiblePackages.length === 0 && calculationResult && !calculationResult.success && calculationResult.error && (
           <div className="bg-red-500/10 rounded-xl p-4 border border-red-500/30">
             <p className="text-red-300 text-sm">{calculationResult.error}</p>
           </div>

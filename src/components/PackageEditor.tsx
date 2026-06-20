@@ -13,6 +13,8 @@ interface PackageEditorProps {
 export default function PackageEditor({ isNew = false, initialType, onClose }: PackageEditorProps) {
   const { editingPackage, setEditingPackage, addPackage, updatePackageById, packages } = usePackageStore();
 
+  const [validationError, setValidationError] = useState<string | null>(null);
+
   const handleClose = () => {
     setEditingPackage(null);
     onClose?.();
@@ -79,11 +81,50 @@ export default function PackageEditor({ isNew = false, initialType, onClose }: P
 
   const handleChange = (field: keyof Package, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
+    if (validationError) setValidationError(null);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.type || !formData.name || !formData.dailyPrice) return;
+    setValidationError(null);
+
+    if (!formData.type || !formData.name || !formData.dailyPrice) {
+      setValidationError('请填写必填项');
+      return;
+    }
+
+    const minDays = formData.minDays !== undefined && formData.minDays !== null && formData.minDays !== '' 
+      ? Number(formData.minDays) 
+      : undefined;
+    const maxDays = formData.maxDays !== undefined && formData.maxDays !== null && formData.maxDays !== '' 
+      ? Number(formData.maxDays) 
+      : undefined;
+    const discount = formData.extendedStayDiscount !== undefined && formData.extendedStayDiscount !== null
+      ? Number(formData.extendedStayDiscount)
+      : 0;
+
+    if (isNaN(minDays!) && minDays !== undefined) {
+      setValidationError('最少天数格式不正确');
+      return;
+    }
+    if (isNaN(maxDays!) && maxDays !== undefined) {
+      setValidationError('最多天数格式不正确');
+      return;
+    }
+    if (isNaN(discount)) {
+      setValidationError('续住折扣格式不正确');
+      return;
+    }
+
+    if (minDays !== undefined && maxDays !== undefined && minDays > maxDays) {
+      setValidationError('最少天数不能大于最多天数');
+      return;
+    }
+
+    if (discount < 0 || discount > 100) {
+      setValidationError('续住折扣必须在0到100之间');
+      return;
+    }
 
     const submitData = {
       type: formData.type as PackageType,
@@ -92,18 +133,23 @@ export default function PackageEditor({ isNew = false, initialType, onClose }: P
       promoText: formData.promoText || '',
       maxPetSize: formData.maxPetSize as PetSize,
       dailyPrice: Number(formData.dailyPrice),
-      extendedStayDiscount: Number(formData.extendedStayDiscount) || 0,
-      minDays: formData.minDays ? Number(formData.minDays) : undefined,
-      maxDays: formData.maxDays ? Number(formData.maxDays) : undefined,
+      extendedStayDiscount: discount,
+      minDays,
+      maxDays,
       monthlyPrice: formData.monthlyPrice ? Number(formData.monthlyPrice) : undefined,
       order: formData.order || packages.length + 1,
     };
 
-    if (isNew) {
-      addPackage(submitData);
-      handleClose();
-    } else if (pkg) {
-      updatePackageById(pkg.id, submitData);
+    try {
+      if (isNew) {
+        await addPackage(submitData);
+        handleClose();
+      } else if (pkg) {
+        await updatePackageById(pkg.id, submitData);
+        handleClose();
+      }
+    } catch (err) {
+      setValidationError((err as Error).message || '保存失败，请重试');
     }
   };
 
@@ -145,6 +191,11 @@ export default function PackageEditor({ isNew = false, initialType, onClose }: P
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 overflow-y-auto max-h-[calc(90vh-180px)]">
+          {validationError && (
+            <div className="mb-4 bg-red-50 border border-red-200 rounded-lg p-3 text-red-600 text-sm font-medium">
+              {validationError}
+            </div>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <label className="block text-sm font-medium text-gray-700 mb-1">套餐类型</label>

@@ -37,6 +37,24 @@ router.post('/', (req: Request, res: Response) => {
     });
   }
 
+  const minDays = pkgData.minDays !== undefined && pkgData.minDays !== null ? Number(pkgData.minDays) : undefined;
+  const maxDays = pkgData.maxDays !== undefined && pkgData.maxDays !== null ? Number(pkgData.maxDays) : undefined;
+  const discount = Number(pkgData.extendedStayDiscount) || 0;
+
+  if (minDays !== undefined && maxDays !== undefined && minDays > maxDays) {
+    return res.status(400).json({
+      success: false,
+      error: '最少天数不能大于最多天数',
+    });
+  }
+
+  if (discount < 0 || discount > 100) {
+    return res.status(400).json({
+      success: false,
+      error: '续住折扣必须在0到100之间',
+    });
+  }
+
   const newPkg = createPackage(pkgData);
   res.status(201).json({
     success: true,
@@ -46,6 +64,27 @@ router.post('/', (req: Request, res: Response) => {
 
 router.put('/:id', (req: Request, res: Response) => {
   const updates = req.body as Partial<Package>;
+  
+  const minDays = updates.minDays !== undefined && updates.minDays !== null ? Number(updates.minDays) : undefined;
+  const maxDays = updates.maxDays !== undefined && updates.maxDays !== null ? Number(updates.maxDays) : undefined;
+  
+  if (minDays !== undefined && maxDays !== undefined && minDays > maxDays) {
+    return res.status(400).json({
+      success: false,
+      error: '最少天数不能大于最多天数',
+    });
+  }
+
+  if (updates.extendedStayDiscount !== undefined) {
+    const discount = Number(updates.extendedStayDiscount);
+    if (discount < 0 || discount > 100) {
+      return res.status(400).json({
+        success: false,
+        error: '续住折扣必须在0到100之间',
+      });
+    }
+  }
+
   const updatedPkg = updatePackage(req.params.id, updates);
   
   if (!updatedPkg) {
