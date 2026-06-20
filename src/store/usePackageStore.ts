@@ -11,6 +11,8 @@ interface PackageState {
   alertMessage: string;
   editingPackage: Package | null;
   draggedType: PackageType | null;
+  calcDays: number;
+  calcPetSize: PetSize;
 
   loadPackages: () => Promise<void>;
   addPackage: (pkg: Omit<Package, 'id' | 'createdAt'>) => Promise<void>;
@@ -22,6 +24,7 @@ interface PackageState {
   setEditingPackage: (pkg: Package | null) => void;
   setDraggedType: (type: PackageType | null) => void;
   clearCalculation: () => void;
+  setCalcInputs: (days: number, petSize: PetSize) => void;
 }
 
 export const usePackageStore = create<PackageState>((set, get) => ({
@@ -33,6 +36,8 @@ export const usePackageStore = create<PackageState>((set, get) => ({
   alertMessage: '',
   editingPackage: null,
   draggedType: null,
+  calcDays: 5,
+  calcPetSize: 'medium',
 
   loadPackages: async () => {
     set({ loading: true, error: null });
@@ -63,10 +68,8 @@ export const usePackageStore = create<PackageState>((set, get) => ({
         loading: false,
         editingPackage: null,
       }));
-      const { calculationResult } = get();
-      if (calculationResult?.matchedPackage?.id === id) {
-        get().clearCalculation();
-      }
+      const { calcDays, calcPetSize } = get();
+      get().calculate({ days: calcDays, petSize: calcPetSize });
     } catch (err) {
       set({ error: (err as Error).message, loading: false });
     }
@@ -96,11 +99,11 @@ export const usePackageStore = create<PackageState>((set, get) => ({
   },
 
   calculate: async (request) => {
-    set({ loading: true, error: null });
+    set({ loading: true, error: null, calcDays: request.days, calcPetSize: request.petSize });
     try {
       const result = await calculatePrice(request);
       if (!result.success && result.error) {
-        set({ showAlert: true, alertMessage: result.error, calculationResult: null, loading: false });
+        set({ calculationResult: result, loading: false });
       } else {
         set({ calculationResult: result, loading: false });
       }
@@ -123,5 +126,9 @@ export const usePackageStore = create<PackageState>((set, get) => ({
 
   clearCalculation: () => {
     set({ calculationResult: null });
+  },
+
+  setCalcInputs: (days, petSize) => {
+    set({ calcDays: days, calcPetSize: petSize });
   },
 }));

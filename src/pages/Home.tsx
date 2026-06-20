@@ -171,7 +171,7 @@ export default function Home() {
                 </li>
                 <li className="flex items-start gap-2">
                   <span className="text-blue-500 mt-0.5">5.</span>
-                  <span>超出套餐体型会弹窗提示拦截</span>
+                  <span>体型不符的套餐自动置灰，不影响其他套餐试算</span>
                 </li>
               </ul>
             </div>
@@ -211,11 +211,10 @@ export default function Home() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {packages.map((pkg, index) => (
+                  {packages.map((pkg) => (
                     <PackageCard
                       key={pkg.id}
                       pkg={pkg}
-                      index={index}
                       onDragStart={handleDragStart}
                       onDragOver={handleDragOver}
                       onDrop={handleDrop}

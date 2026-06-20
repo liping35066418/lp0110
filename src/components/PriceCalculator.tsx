@@ -1,14 +1,16 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import type { PetSize } from '../types';
 import { PET_SIZE_LABELS, PACKAGE_TYPE_LABELS, PACKAGE_TYPE_ICONS } from '../types';
 import { usePackageStore } from '../store/usePackageStore';
 import { Calculator, RefreshCw } from 'lucide-react';
 
 export default function PriceCalculator() {
-  const { calculate, calculationResult, clearCalculation, packages, loading } = usePackageStore();
-  const [days, setDays] = useState<number>(5);
-  const [petSize, setPetSize] = useState<PetSize>('medium');
-  const [autoCalculate, setAutoCalculate] = useState(true);
+  const { calculate, calculationResult, clearCalculation, packages, loading, calcDays, calcPetSize, setCalcInputs } = usePackageStore();
+
+  const days = calcDays;
+  const petSize = calcPetSize;
+  const setDays = (d: number) => setCalcInputs(d, petSize);
+  const setPetSize = (s: PetSize) => setCalcInputs(days, s);
 
   const sizeOptions: { value: PetSize; label: string; emoji: string }[] = [
     { value: 'small', label: '小型', emoji: '🐕' },
@@ -18,13 +20,13 @@ export default function PriceCalculator() {
   ];
 
   useEffect(() => {
-    if (autoCalculate && days > 0 && packages.length > 0) {
+    if (days > 0 && packages.length > 0) {
       const timer = setTimeout(() => {
         calculate({ days, petSize });
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [days, petSize, autoCalculate, calculate, packages.length]);
+  }, [days, petSize, calculate, packages.length]);
 
   useEffect(() => {
     if (packages.length > 0) {
@@ -35,6 +37,9 @@ export default function PriceCalculator() {
   const handleCalculate = () => {
     calculate({ days, petSize });
   };
+
+  const bd = calculationResult?.breakdown;
+  const isCrossTier = bd && bd.fullMonths !== undefined && bd.fullMonths > 0;
 
   return (
     <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 text-white shadow-2xl">
@@ -102,29 +107,18 @@ export default function PriceCalculator() {
         </div>
 
         <div className="flex items-center gap-3">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={autoCalculate}
-              onChange={(e) => setAutoCalculate(e.target.checked)}
-              className="w-4 h-4 rounded border-slate-600 bg-slate-700 text-blue-500 focus:ring-blue-500"
-            />
-            <span className="text-sm text-slate-300">实时计算</span>
-          </label>
-          {!autoCalculate && (
-            <button
-              onClick={handleCalculate}
-              disabled={loading}
-              className="flex-1 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl font-medium hover:from-blue-600 hover:to-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              {loading ? (
-                <RefreshCw size={18} className="animate-spin" />
-              ) : (
-                <Calculator size={18} />
-              )}
-              计算费用
-            </button>
-          )}
+          <button
+            onClick={handleCalculate}
+            disabled={loading}
+            className="flex-1 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl font-medium hover:from-blue-600 hover:to-indigo-700 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+          >
+            {loading ? (
+              <RefreshCw size={18} className="animate-spin" />
+            ) : (
+              <Calculator size={18} />
+            )}
+            重新计算
+          </button>
           <button
             onClick={clearCalculation}
             className="px-4 py-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded-lg transition-colors"
@@ -133,7 +127,7 @@ export default function PriceCalculator() {
           </button>
         </div>
 
-        {calculationResult && calculationResult.success && (
+        {calculationResult && calculationResult.success && bd && (
           <div className="bg-slate-700/50 rounded-xl p-5 border border-slate-600">
             <div className="flex items-center gap-3 mb-4 pb-4 border-b border-slate-600">
               <span className="text-3xl">
@@ -151,23 +145,48 @@ export default function PriceCalculator() {
             </div>
 
             <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-slate-400">单日单价</span>
-                <span className="font-medium">¥{calculationResult.breakdown.dailyRate}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">寄养天数</span>
-                <span className="font-medium">{calculationResult.breakdown.days}天</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-400">基础总价</span>
-                <span className="font-medium">¥{calculationResult.breakdown.basePrice}</span>
-              </div>
-              {calculationResult.breakdown.discount > 0 && (
-                <div className="flex justify-between text-green-400">
-                  <span>续住折扣</span>
-                  <span className="font-medium">-¥{calculationResult.breakdown.discount}</span>
-                </div>
+              {isCrossTier ? (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">包月费用</span>
+                    <span className="font-medium">{bd.fullMonths}个月 × ¥{calculationResult.matchedPackage!.monthlyPrice} = ¥{bd.monthlyTotal}</span>
+                  </div>
+                  {bd.remainingDays! > 0 && (
+                    <>
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">续住天数</span>
+                        <span className="font-medium">{bd.remainingDays}天 × ¥{bd.dailyRate} = ¥{bd.remainingDaysBase}</span>
+                      </div>
+                      {bd.remainingDaysDiscount! > 0 && (
+                        <div className="flex justify-between text-green-400">
+                          <span>续住折扣</span>
+                          <span className="font-medium">-¥{bd.remainingDaysDiscount}</span>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">单日单价</span>
+                    <span className="font-medium">¥{bd.dailyRate}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">寄养天数</span>
+                    <span className="font-medium">{bd.days}天</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">基础总价</span>
+                    <span className="font-medium">¥{bd.basePrice}</span>
+                  </div>
+                  {bd.discount > 0 && (
+                    <div className="flex justify-between text-green-400">
+                      <span>续住折扣</span>
+                      <span className="font-medium">-¥{bd.discount}</span>
+                    </div>
+                  )}
+                </>
               )}
               <div className="pt-3 mt-3 border-t border-slate-600">
                 <div className="flex justify-between items-center">
@@ -178,6 +197,12 @@ export default function PriceCalculator() {
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {calculationResult && !calculationResult.success && calculationResult.error && (
+          <div className="bg-red-500/10 rounded-xl p-4 border border-red-500/30">
+            <p className="text-red-300 text-sm">{calculationResult.error}</p>
           </div>
         )}
 

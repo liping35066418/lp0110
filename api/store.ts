@@ -91,3 +91,7 @@ export function reorderPackages(ids: string[]): void {
   });
   packages = newPackages;
 }
+
+export function setPackagesForTesting(testPackages: Package[]): void {
+  packages = [...testPackages];
+}

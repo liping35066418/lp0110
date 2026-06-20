@@ -19,27 +19,78 @@ export function validatePetSize(pkg: Package, petSize: PetSize): SizeValidationR
   };
 }
 
-export function findMatchingPackage(days: number, petSize: PetSize): Package | null {
+export function calcPriceForPackage(pkg: Package, days: number): {
+  basePrice: number;
+  discount: number;
+  totalPrice: number;
+  dailyRate: number;
+  fullMonths?: number;
+  monthlyTotal?: number;
+  remainingDays?: number;
+  remainingDaysBase?: number;
+  remainingDaysDiscount?: number;
+} {
+  const dailyRate = pkg.dailyPrice;
+
+  if (pkg.monthlyPrice && days >= 30) {
+    const fullMonths = Math.floor(days / 30);
+    const remainingDays = days % 30;
+    const monthlyTotal = fullMonths * pkg.monthlyPrice;
+    const remainingDaysBase = remainingDays * dailyRate;
+    let remainingDaysDiscount = 0;
+    if (pkg.extendedStayDiscount > 0 && remainingDays >= 3) {
+      remainingDaysDiscount = Math.round(remainingDaysBase * (pkg.extendedStayDiscount / 100));
+    }
+    const basePrice = monthlyTotal + remainingDaysBase;
+    return {
+      basePrice,
+      discount: remainingDaysDiscount,
+      totalPrice: basePrice - remainingDaysDiscount,
+      dailyRate,
+      fullMonths,
+      monthlyTotal,
+      remainingDays,
+      remainingDaysBase,
+      remainingDaysDiscount,
+    };
+  }
+
+  const basePrice = days * dailyRate;
+  let discountAmount = 0;
+  if (pkg.extendedStayDiscount > 0 && days >= 3) {
+    discountAmount = Math.round(basePrice * (pkg.extendedStayDiscount / 100));
+  }
+  return {
+    basePrice,
+    discount: discountAmount,
+    totalPrice: basePrice - discountAmount,
+    dailyRate,
+  };
+}
+
+export function findMatchingPackage(days: number, petSize: PetSize): { pkg: Package; priceInfo: ReturnType<typeof calcPriceForPackage> } | null {
   const packages = getAllPackages();
 
   const eligiblePackages = packages.filter(pkg => {
     const sizeValid = validatePetSize(pkg, petSize).allowed;
     if (!sizeValid) return false;
-
     if (pkg.minDays && days < pkg.minDays) return false;
     if (pkg.maxDays && days > pkg.maxDays) return false;
-
     return true;
   });
 
   if (eligiblePackages.length === 0) return null;
 
-  eligiblePackages.sort((a, b) => {
-    const typePriority = { daycare: 3, shortstay: 2, longstay: 1 };
-    return typePriority[a.type] - typePriority[b.type];
-  });
+  let best: { pkg: Package; priceInfo: ReturnType<typeof calcPriceForPackage> } | null = null;
+  for (const pkg of eligiblePackages) {
+    const priceInfo = calcPriceForPackage(pkg, days);
+    if (!best || priceInfo.totalPrice < best.priceInfo.totalPrice || 
+        (priceInfo.totalPrice === best.priceInfo.totalPrice && pkg.order < best.pkg.order)) {
+      best = { pkg, priceInfo };
+    }
+  }
 
-  return eligiblePackages[0];
+  return best;
 }
 
 export function calculatePrice(request: CalculationRequest): CalculationResult {
@@ -60,9 +111,9 @@ export function calculatePrice(request: CalculationRequest): CalculationResult {
     };
   }
 
-  const matchedPkg = findMatchingPackage(days, petSize);
+  const matchResult = findMatchingPackage(days, petSize);
 
-  if (!matchedPkg) {
+  if (!matchResult) {
     const allPackages = getAllPackages();
     const sizeBlocked = allPackages.every(pkg => !validatePetSize(pkg, petSize).allowed);
 
@@ -95,50 +146,24 @@ export function calculatePrice(request: CalculationRequest): CalculationResult {
     };
   }
 
-  const sizeValidation = validatePetSize(matchedPkg, petSize);
-  if (!sizeValidation.allowed) {
-    return {
-      success: false,
-      totalPrice: 0,
-      breakdown: {
-        basePrice: 0,
-        discount: 0,
-        finalPrice: 0,
-        dailyRate: 0,
-        days,
-      },
-      error: sizeValidation.message,
-    };
-  }
-
-  let dailyRate = matchedPkg.dailyPrice;
-  let basePrice: number;
-  let discountAmount = 0;
-
-  if (matchedPkg.type === 'longstay' && matchedPkg.monthlyPrice && days >= 30) {
-    const fullMonths = Math.floor(days / 30);
-    const remainingDays = days % 30;
-    basePrice = fullMonths * matchedPkg.monthlyPrice + remainingDays * dailyRate;
-  } else {
-    basePrice = days * dailyRate;
-  }
-
-  if (matchedPkg.extendedStayDiscount > 0 && days >= 3) {
-    discountAmount = Math.round(basePrice * (matchedPkg.extendedStayDiscount / 100));
-  }
-
-  const finalPrice = basePrice - discountAmount;
+  const matchedPkg = matchResult.pkg;
+  const priceInfo = matchResult.priceInfo;
 
   return {
     success: true,
     matchedPackage: matchedPkg,
-    totalPrice: finalPrice,
+    totalPrice: priceInfo.totalPrice,
     breakdown: {
-      basePrice,
-      discount: discountAmount,
-      finalPrice,
-      dailyRate,
+      basePrice: priceInfo.basePrice,
+      discount: priceInfo.discount,
+      finalPrice: priceInfo.totalPrice,
+      dailyRate: priceInfo.dailyRate,
       days,
+      fullMonths: priceInfo.fullMonths,
+      monthlyTotal: priceInfo.monthlyTotal,
+      remainingDays: priceInfo.remainingDays,
+      remainingDaysBase: priceInfo.remainingDaysBase,
+      remainingDaysDiscount: priceInfo.remainingDaysDiscount,
     },
   };
 }

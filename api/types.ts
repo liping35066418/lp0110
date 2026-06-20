@@ -33,6 +33,11 @@ export interface CalculationResult {
     finalPrice: number;
     dailyRate: number;
     days: number;
+    fullMonths?: number;
+    monthlyTotal?: number;
+    remainingDays?: number;
+    remainingDaysBase?: number;
+    remainingDaysDiscount?: number;
   };
   error?: string;
 }

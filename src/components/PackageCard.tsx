@@ -1,22 +1,41 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import type { Package } from '../types';
 import { PACKAGE_TYPE_LABELS, PACKAGE_TYPE_ICONS, PACKAGE_TYPE_COLORS, PET_SIZE_LABELS } from '../types';
 import { usePackageStore } from '../store/usePackageStore';
-import { Edit2, Trash2, GripVertical } from 'lucide-react';
+import { isSizeCompatible, isDaysInRange, calcPriceForPackage } from '../utils/calcEstimate';
+import { Edit2, Trash2, GripVertical, AlertCircle } from 'lucide-react';
 
 interface PackageCardProps {
   pkg: Package;
-  index: number;
   onDragStart: (e: React.DragEvent, id: string) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDrop: (e: React.DragEvent, targetId: string) => void;
 }
 
-export default function PackageCard({ pkg, index, onDragStart, onDragOver, onDrop }: PackageCardProps) {
-  const { setEditingPackage, removePackage, calculationResult } = usePackageStore();
+export default function PackageCard({ pkg, onDragStart, onDragOver, onDrop }: PackageCardProps) {
+  const { setEditingPackage, removePackage, calculationResult, calcDays, calcPetSize } = usePackageStore();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const isMatched = calculationResult?.matchedPackage?.id === pkg.id;
+  const sizeOk = isSizeCompatible(pkg, calcPetSize);
+  const daysOk = isDaysInRange(pkg, calcDays);
+
+  const estimate = useMemo(() => {
+    if (isMatched && calculationResult?.success) {
+      return {
+        basePrice: calculationResult.breakdown.basePrice,
+        discount: calculationResult.breakdown.discount,
+        totalPrice: calculationResult.totalPrice,
+        dailyRate: calculationResult.breakdown.dailyRate,
+        fullMonths: calculationResult.breakdown.fullMonths,
+        monthlyTotal: calculationResult.breakdown.monthlyTotal,
+        remainingDays: calculationResult.breakdown.remainingDays,
+        remainingDaysBase: calculationResult.breakdown.remainingDaysBase,
+        remainingDaysDiscount: calculationResult.breakdown.remainingDaysDiscount,
+      };
+    }
+    return calcPriceForPackage(pkg, calcDays);
+  }, [pkg, calcDays, isMatched, calculationResult]);
 
   const handleDelete = () => {
     removePackage(pkg.id);
@@ -25,17 +44,28 @@ export default function PackageCard({ pkg, index, onDragStart, onDragOver, onDro
 
   return (
     <div
-      draggable
-      onDragStart={(e) => onDragStart(e, pkg.id)}
+      draggable={sizeOk}
+      onDragStart={(e) => sizeOk && onDragStart(e, pkg.id)}
       onDragOver={onDragOver}
       onDrop={(e) => onDrop(e, pkg.id)}
       className={`relative bg-white rounded-2xl shadow-lg overflow-hidden border-2 transition-all duration-300 ${
-        isMatched ? 'border-green-500 ring-4 ring-green-200' : 'border-transparent hover:shadow-xl'
+        !sizeOk
+          ? 'border-gray-300 opacity-60 grayscale'
+          : isMatched
+            ? 'border-green-500 ring-4 ring-green-200'
+            : 'border-transparent hover:shadow-xl'
       }`}
     >
       {isMatched && (
-        <div className="absolute top-0 right-0 bg-green-500 text-white px-3 py-1 text-sm font-medium rounded-bl-lg">
+        <div className="absolute top-0 right-0 bg-green-500 text-white px-3 py-1 text-sm font-medium rounded-bl-lg z-10">
           已匹配
+        </div>
+      )}
+
+      {!sizeOk && (
+        <div className="absolute top-0 right-0 bg-gray-400 text-white px-3 py-1 text-sm font-medium rounded-bl-lg z-10 flex items-center gap-1">
+          <AlertCircle size={14} />
+          体型不符
         </div>
       )}
 
@@ -117,6 +147,54 @@ export default function PackageCard({ pkg, index, onDragStart, onDragOver, onDro
             </div>
           )}
         </div>
+
+        {estimate && (
+          <div className={`mt-3 rounded-lg p-3 border-2 ${
+            isMatched
+              ? 'bg-green-50 border-green-300'
+              : !sizeOk
+                ? 'bg-gray-100 border-gray-300'
+                : !daysOk
+                  ? 'bg-amber-50 border-amber-200'
+                  : 'bg-blue-50 border-blue-200'
+          }`}>
+            <div className="flex items-center justify-between">
+              <span className={`text-xs font-medium ${
+                isMatched
+                  ? 'text-green-700'
+                  : !sizeOk
+                    ? 'text-gray-500'
+                    : !daysOk
+                      ? 'text-amber-700'
+                      : 'text-blue-700'
+              }`}>
+                {isMatched ? '✓ 匹配价' : !sizeOk ? '体型不符 · 参考价' : !daysOk ? '天数不适用 · 参考价' : '预计费用'}
+              </span>
+              <span className={`text-lg font-bold ${
+                isMatched
+                  ? 'text-green-700'
+                  : !sizeOk
+                    ? 'text-gray-500'
+                    : !daysOk
+                      ? 'text-amber-600'
+                      : 'text-blue-700'
+              }`}>
+                ¥{estimate.totalPrice}
+              </span>
+            </div>
+            {estimate.fullMonths !== undefined && estimate.fullMonths > 0 && (
+              <div className="text-xs text-gray-500 mt-1">
+                含{estimate.fullMonths}个月包月 + {estimate.remainingDays}天日计
+                {estimate.remainingDaysDiscount! > 0 && ` (续住${pkg.extendedStayDiscount}%折)`}
+              </div>
+            )}
+            {!isMatched && estimate.discount > 0 && estimate.fullMonths === undefined && (
+              <div className="text-xs text-gray-500 mt-1">
+                含续住{pkg.extendedStayDiscount}%折优惠
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {showDeleteConfirm && (
